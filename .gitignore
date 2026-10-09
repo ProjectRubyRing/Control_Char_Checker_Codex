@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+checker-test-*/
+acl-probe-default/
+.verification/
+text-check-report.html
+text-check-report.json
+Control-Char-Checker.zip

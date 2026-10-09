@@ -1,0 +1,3 @@
+NBSP:   / NARROW NBSP:   / ZWSP: ​ / BOM: ﻿
+TAB:	CONTROL:
+全角空白: 　

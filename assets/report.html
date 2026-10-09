@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; font-src 'none'; img-src 'none'; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>テキストファイル検査レポート</title>
+  <style>
+    :root { color-scheme: light; font-family: "Meiryo UI", "Meiryo", "Noto Sans CJK JP", sans-serif; color: #222; background: #f2f2f2; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-size: 13px; line-height: 1.65; }
+    header { background: #222; color: #fff; padding: 32px max(24px, calc((100vw - 1280px) / 2)); }
+    header p { margin: 6px 0 0; color: #ccc; }
+    h1 { font-size: 24px; margin: 0; font-weight: 600; }
+    h2 { font-size: 17px; margin: 0 0 12px; }
+    main { max-width: 1328px; margin: 24px auto; padding: 0 24px; }
+    .panel { background: #fff; border: 1px solid #d5d5d5; padding: 20px; margin-bottom: 20px; }
+    .meta { display: grid; grid-template-columns: 125px 1fr; gap: 6px 12px; margin: 0; }
+    dt { color: #666; } dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+    .cards { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin: 20px 0; }
+    .card { border: 1px solid #d5d5d5; background: #fff; padding: 16px; }
+    .card strong { display: block; font-size: 26px; line-height: 1.4; }
+    .card span { color: #666; }
+    .notice { border-left: 4px solid #333; padding: 12px 16px; background: #e9e9e9; }
+    .filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 18px 0; }
+    input, select, button { font: inherit; color: #222; background: #fff; border: 1px solid #999; padding: 8px 10px; }
+    input { min-width: 240px; flex: 1; }
+    :focus-visible { outline: 2px solid #222; outline-offset: 2px; }
+    .scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th { background: #ededed; font-weight: 600; }
+    th, td { padding: 10px 12px; vertical-align: top; border-bottom: 1px solid #ddd; overflow-wrap: anywhere; }
+    .file-table { table-layout: fixed; min-width: 800px; }
+    .file-table th:first-child { width: 32%; }
+    .file-table th:nth-child(2) { width: 8%; }
+    .file-table th:nth-child(3) { width: 13%; }
+    .file-table th:nth-child(4) { width: 16%; }
+    .file-table th:nth-child(5) { width: 21%; }
+    .file-table th:nth-child(6) { width: 10%; }
+    .badge { display: inline-block; border: 1px solid #888; padding: 1px 7px; font-size: 12px; white-space: nowrap; }
+    .badge.warning { background: #ddd; color: #111; font-weight: 600; }
+    .badge.error { background: #222; color: #fff; }
+    .badge.binary, .badge.skipped { background: #f4f4f4; color: #666; }
+    summary { cursor: pointer; overflow-wrap: anywhere; white-space: pre-wrap; }
+    details[open] summary { font-weight: 600; }
+    .detail-row > td { background: #fafafa; padding: 16px 24px; }
+    .detail { font-weight: 400; }
+    .detail p { margin: 8px 0; }
+    .detail table { font-size: 12px; }
+    .positions { max-height: 240px; overflow-y: auto; white-space: pre-wrap; min-width: 180px; }
+    .muted { color: #666; }
+    footer { color: #666; padding: 10px 0 24px; }
+    @media (max-width: 800px) { .cards { grid-template-columns: repeat(3, 1fr); } main { padding: 0 12px; } }
+    @media print { body { background: #fff; } header { color: #222; background: #fff; padding: 12px; } header p { color: #555; } .filters { display: none; } main { padding: 0; } .scroll, .positions { overflow: visible; max-height: none; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>テキストファイル検査レポート</h1>
+    <p>拡張子 · 文字コード · 改行コード · 制御文字と不可視文字</p>
+  </header>
+  <main>
+    <noscript><p class="notice">結果の表示にはJavaScriptを有効にしてください。同時出力のJSONでも全結果を確認できます。</p></noscript>
+    <section class="panel" aria-label="検査情報">
+      <dl class="meta" id="metadata"></dl>
+      <p class="notice" id="completion"></p>
+    </section>
+    <div class="cards" id="cards" aria-label="集計"></div>
+    <section class="panel">
+      <h2>ファイル別の結果</h2>
+      <p class="muted">ファイル名を開くと、文字コード候補ごとの検査結果と検出位置を確認できます。位置は1始まりの行・列です。</p>
+      <div class="filters">
+        <label for="search">検索</label><input id="search" type="search" placeholder="ファイル名・拡張子・文字コード" autocomplete="off">
+        <label for="status">表示</label><select id="status">
+          <option value="all">すべて</option><option value="review">要確認・エラー・未検査</option>
+          <option value="ok">問題なし</option><option value="warning">要確認</option>
+          <option value="error">エラー</option><option value="binary">バイナリ</option><option value="skipped">未検査</option>
+        </select>
+        <span id="visible-count" aria-live="polite"></span>
+      </div>
+      <div class="scroll">
+        <table class="file-table"><thead><tr><th scope="col">ファイル / 詳細</th><th scope="col">拡張子</th><th scope="col">状態</th><th scope="col">文字コード / BOM</th><th scope="col">改行コード</th><th scope="col">検出件数</th></tr></thead><tbody id="files"></tbody></table>
+      </div>
+    </section>
+    <footer>
+      Meiryo UIが閲覧端末にある場合に使用します。通常のSPACEは検出対象から除外し、TAB・CR・LFは別途集計します。
+      異なる改行コードの混在や、NBSP・全角空白・ゼロ幅文字・異体字セレクターなどは「要確認」とします。正当な利用も含みます。
+      入力内容の抜粋は保存せず、検出位置を全件記録しています。JSONにはフィルターに関係なく全結果が含まれます。
+    </footer>
+  </main>
+  <script id="report-data" type="application/json">@@REPORT_JSON@@</script>
+  <script>
+    'use strict';
+    const report = JSON.parse(document.getElementById('report-data').textContent);
+    const labels = { ok: '問題なし', warning: '要確認', error: 'エラー', binary: 'バイナリ', skipped: '未検査' };
+    const sources = { explicit: '指定', bom: 'BOM', heuristic: 'BOMなし推定', 'iso-2022-marker': 'ISO-2022識別列', 'utf-8-validation': '全バイト検証', ambiguous: '候補あり・確定できず' };
+    const kinds = { control: '制御文字', format: '書式制御', space: '特殊空白', separator: '特殊改行', ignorable: '不可視 / 無視可能', noncharacter: '非文字', replacement: '置換文字' };
+    const number = value => value.toLocaleString('ja-JP');
+    const element = (tag, text, className) => {
+      const node = document.createElement(tag);
+      if (text !== undefined) node.textContent = text;
+      if (className) node.className = className;
+      return node;
+    };
+    const displayPath = path => path.replace(/[\u0000-\u001f\u007f-\u009f\u00a0\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/g,
+      character => '\\u' + character.charCodeAt(0).toString(16).padStart(4, '0'));
+    const newlineText = analysis => Object.entries(analysis.newlines).filter(([, count]) => count).map(([name, count]) => name + ': ' + number(count)).join(' / ') || '改行なし';
+    const metadata = document.getElementById('metadata');
+    for (const [name, value] of [['対象', displayPath(report.root)], ['検査日時', report.generatedAt], ['文字コード指定', report.requestedEncoding], ['Unicode定義', report.unicodeVersion], ['出力の除外', report.excludedOutputs.map(displayPath).join('\n')]]) {
+      metadata.append(element('dt', name), element('dd', value));
+    }
+    document.getElementById('completion').textContent = report.complete
+      ? '走査・デコードが完了しました。「要確認」の文字や改行混在がある場合は、用途に応じて確認してください。'
+      : '検査を確定できない項目があります。エラー・未検査項目を確認し、文字コードが曖昧なファイルは明示指定して再検査してください。';
+    for (const [name, key] of [['全項目', 'entries'], ['テキスト', 'text'], ['要確認', 'warning'], ['エラー', 'error'], ['バイナリ', 'binary'], ['未検査', 'skipped']]) {
+      const card = element('div', undefined, 'card');
+      card.append(element('strong', number(report.summary[key])), element('span', name));
+      document.getElementById('cards').append(card);
+    }
+    function addDetails(details, file) {
+      const body = element('div', undefined, 'detail');
+      if (file.reason) body.append(element('p', file.reason));
+      if (file.size !== null) body.append(element('p', 'サイズ: ' + number(file.size) + ' bytes'));
+      for (const analysis of file.analyses) {
+        body.append(element('p', analysis.encoding + ' / ' + number(analysis.characters) + '文字 / ' + number(analysis.lines) + '行 / TAB: ' + number(analysis.tabCount)));
+        body.append(element('p', newlineText(analysis) + ' / 末尾改行: ' + (analysis.endsWithNewline === null ? '空ファイル' : (analysis.endsWithNewline ? 'あり' : 'なし'))));
+        if (!analysis.findings.length) { body.append(element('p', '対象の制御文字・特殊空白・不可視文字は検出されませんでした。', 'muted')); continue; }
+        const table = element('table');
+        const head = element('thead'), row = element('tr');
+        for (const title of ['コードポイント / 名前', '種別', '件数', '位置（行:列）']) { const th = element('th', title); th.scope = 'col'; row.append(th); }
+        head.append(row); table.append(head);
+        const tbody = element('tbody');
+        for (const finding of analysis.findings) {
+          const tr = element('tr');
+          tr.append(element('td', finding.codepoint + ' ' + finding.name), element('td', (kinds[finding.kind] || finding.kind) + ' (' + finding.category + ')'), element('td', number(finding.count)));
+          const positionCell = element('td');
+          positionCell.append(element('div', finding.positions.map(position => position.join(':')).join(', '), 'positions'));
+          tr.append(positionCell); tbody.append(tr);
+        }
+        table.append(tbody); body.append(table);
+      }
+      details.append(body);
+    }
+    const fileRows = [];
+    for (const file of report.files) {
+      const row = element('tr'), fileCell = element('td'), details = element('details');
+      const detailRow = element('tr', undefined, 'detail-row'), detailCell = element('td');
+      detailCell.colSpan = 6; detailRow.append(detailCell); detailRow.hidden = true;
+      details.append(element('summary', displayPath(file.path)));
+      let ready = false;
+      details.addEventListener('toggle', () => {
+        detailRow.hidden = !details.open || row.hidden;
+        if (details.open && !ready) { addDetails(detailCell, file); ready = true; }
+      });
+      fileCell.append(details); row.append(fileCell, element('td', file.extension || 'なし'));
+      const statusCell = element('td'); statusCell.append(element('span', labels[file.status], 'badge ' + file.status)); row.append(statusCell);
+      const encodingCell = element('td', file.encodings.join(' / ') || '—');
+      if (file.bom) encodingCell.append(element('div', 'BOM: ' + file.bom, 'muted'));
+      if (file.encodingSource) encodingCell.append(element('div', sources[file.encodingSource] || file.encodingSource, 'muted'));
+      row.append(encodingCell);
+      const newlineCell = element('td'), countCell = element('td');
+      for (const analysis of file.analyses) {
+        const prefix = file.analyses.length > 1 ? analysis.encoding + ': ' : '';
+        newlineCell.append(element('div', prefix + newlineText(analysis)));
+        countCell.append(element('div', prefix + number(analysis.findings.reduce((sum, finding) => sum + finding.count, 0))));
+      }
+      if (!file.analyses.length) { newlineCell.textContent = '—'; countCell.textContent = '—'; }
+      row.append(newlineCell, countCell); document.getElementById('files').append(row, detailRow);
+      fileRows.push({ row, detailRow, details, file, search: [file.path, file.extension, ...file.encodings].join(' ').toLowerCase() });
+    }
+    function filter() {
+      const query = document.getElementById('search').value.toLowerCase(), status = document.getElementById('status').value;
+      let visible = 0;
+      for (const entry of fileRows) {
+        const matches = status === 'all' || (status === 'review' ? ['warning', 'error', 'skipped'].includes(entry.file.status) : status === entry.file.status);
+        entry.row.hidden = !matches || !entry.search.includes(query);
+        entry.detailRow.hidden = entry.row.hidden || !entry.details.open;
+        if (!entry.row.hidden) visible++;
+      }
+      document.getElementById('visible-count').textContent = number(visible) + ' / ' + number(fileRows.length) + '項目';
+    }
+    document.getElementById('search').addEventListener('input', filter);
+    document.getElementById('status').addEventListener('change', filter);
+    filter();
+  </script>
+</body>
+</html>
